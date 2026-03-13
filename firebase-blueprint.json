@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Public and private information about a user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique identifier for the user." },
+        "username": { "type": "string", "description": "User's unique handle." },
+        "displayName": { "type": "string", "description": "User's display name." },
+        "photoURL": { "type": "string", "description": "URL to the user's profile picture." },
+        "email": { "type": "string", "description": "User's email address (Private)." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the account was created." },
+        "isOnline": { "type": "boolean", "description": "Whether the user is currently online." },
+        "lastSeen": { "type": "string", "format": "date-time", "description": "When the user was last active." }
+      },
+      "required": ["uid", "username", "displayName", "email", "createdAt"]
+    },
+    "Chat": {
+      "title": "Chat Session",
+      "description": "A conversation between two or more users.",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" }, "description": "List of user UIDs in the chat." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last time the chat was updated." },
+        "lastMessage": { "type": "string", "description": "The content of the most recent message." },
+        "lastMessageSenderId": { "type": "string", "description": "UID of the sender of the last message." },
+        "lastMessageReadBy": { "type": "array", "items": { "type": "string" }, "description": "List of UIDs who have read the last message." },
+        "unreadCount": { "type": "object", "description": "Map of unread counts per user UID." }
+      },
+      "required": ["participants", "updatedAt"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "A single message within a chat.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string", "description": "UID of the message sender." },
+        "text": { "type": "string", "description": "Text content of the message." },
+        "type": { "type": "string", "enum": ["text", "image", "audio"], "description": "Type of message content." },
+        "mediaUrl": { "type": "string", "description": "URL to media if type is image or audio." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the message was sent." },
+        "readBy": { "type": "array", "items": { "type": "string" }, "description": "List of UIDs who have read this message." }
+      },
+      "required": ["senderId", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles collection."
+    },
+    "/chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Main chats collection."
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages subcollection within a chat."
+    }
+  }
+}

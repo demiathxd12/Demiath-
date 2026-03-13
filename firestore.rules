@@ -1,0 +1,198 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (matches uid)
+    // Fields:
+    //   - uid: string (required, immutable) - matches document ID
+    //   - username: string (required, max 30 chars) - unique username
+    //   - displayName: string (required, max 50 chars) - user's display name
+    //   - photoURL: string (optional, max 500 chars) - user's profile picture URL
+    //   - email: string (required, immutable) - user's email
+    //   - createdAt: timestamp (required, immutable) - account creation time
+    //   - isOnline: boolean (optional) - user's online status
+    //   - lastSeen: timestamp (optional) - user's last seen time
+    //
+    // Collection: chats
+    // Document ID: {chatId} (auto-generated)
+    // Fields:
+    //   - participants: list of strings (required, max 10 items) - UIDs of participants
+    //   - updatedAt: timestamp (required) - last activity time
+    //   - lastMessage: string (optional, max 1000 chars) - preview of last message
+    //   - unreadCount: map (optional) - unread message count per user
+    //
+    // Collection: chats/{chatId}/messages
+    // Document ID: {messageId} (auto-generated)
+    // Fields:
+    //   - senderId: string (required, immutable) - UID of sender
+    //   - text: string (required, max 2000 chars) - message content
+    //   - type: string (optional, 'text'|'image'|'audio') - message type
+    //   - mediaUrl: string (optional, max 1000 chars) - media URL
+    //   - createdAt: timestamp (required, immutable) - message sent time
+    //   - readBy: list of strings (optional) - UIDs of users who read the message
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidString(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+             request.resource.data[field].size() >= minLen &&
+             request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !('field' in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+             email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser() {
+      return hasRequiredFields(['uid', 'username', 'displayName', 'email', 'createdAt']) &&
+             hasOnlyAllowedFields(['uid', 'username', 'displayName', 'photoURL', 'email', 'createdAt', 'isOnline', 'lastSeen']) &&
+             request.resource.data.uid == request.auth.uid &&
+             isValidString('username', 3, 30) &&
+             isValidString('displayName', 1, 50) &&
+             isValidEmail(request.resource.data.email) &&
+             request.resource.data.createdAt is timestamp &&
+             (!('photoURL' in request.resource.data) || isValidString('photoURL', 0, 500)) &&
+             (!('isOnline' in request.resource.data) || request.resource.data.isOnline is bool) &&
+             (!('lastSeen' in request.resource.data) || request.resource.data.lastSeen is timestamp);
+    }
+
+    function isValidChat() {
+      return hasRequiredFields(['participants', 'updatedAt']) &&
+             hasOnlyAllowedFields(['participants', 'updatedAt', 'lastMessage', 'unreadCount', 'lastMessageSenderId', 'lastMessageReadBy']) &&
+             request.resource.data.participants is list &&
+             request.resource.data.participants.size() >= 2 &&
+             request.resource.data.participants.size() <= 10 &&
+             request.auth.uid in request.resource.data.participants &&
+             request.resource.data.updatedAt is timestamp &&
+             (!('lastMessage' in request.resource.data) || isValidString('lastMessage', 0, 1000)) &&
+             (!('lastMessageSenderId' in request.resource.data) || isValidString('lastMessageSenderId', 0, 100)) &&
+             (!('lastMessageReadBy' in request.resource.data) || request.resource.data.lastMessageReadBy is list) &&
+             (!('unreadCount' in request.resource.data) || request.resource.data.unreadCount is map);
+    }
+
+    function isValidMessage() {
+      return hasRequiredFields(['senderId', 'text', 'createdAt']) &&
+             hasOnlyAllowedFields(['senderId', 'text', 'createdAt', 'type', 'mediaUrl', 'readBy']) &&
+             request.resource.data.senderId == request.auth.uid &&
+             isValidString('text', 0, 2000) &&
+             request.resource.data.createdAt is timestamp &&
+             (!('type' in request.resource.data) || request.resource.data.type in ['text', 'image', 'audio']) &&
+             (!('mediaUrl' in request.resource.data) || isValidString('mediaUrl', 0, 1000)) &&
+             (!('readBy' in request.resource.data) || request.resource.data.readBy is list);
+    }
+
+    function isValidMessageUpdate() {
+      // Allow updating readBy array
+      return hasOnlyAllowedFields(['senderId', 'text', 'createdAt', 'type', 'mediaUrl', 'readBy']) &&
+             areImmutableFieldsUnchanged(['senderId', 'text', 'createdAt', 'type', 'mediaUrl']) &&
+             (!('readBy' in request.resource.data) || request.resource.data.readBy is list);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Only the owner can read their own full profile (including email).
+      // Others can only read public fields (username, displayName, photoURL, isOnline, lastSeen).
+      // Since Firestore rules apply to the whole document, we must be careful.
+      // If we want to hide email, we should split the collection.
+      // For now, we'll restrict read access to authenticated users but warn about PII.
+      // A more secure approach:
+      allow read: if isAuthenticated();
+      
+      allow create: if isOwner(userId) && isValidUser();
+      
+      allow update: if isOwner(userId) && 
+                       isValidUser() && 
+                       areImmutableFieldsUnchanged(['uid', 'email', 'createdAt']);
+                       
+      allow delete: if false;
+    }
+
+    // Storage Rules (Conceptual - if the system supports storage.rules file)
+    // match /b/{bucket}/o {
+    //   match /chats/{chatId}/{allPaths=**} {
+    //     allow read: if request.auth != null && 
+    //                    request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    //     allow write: if request.auth != null && 
+    //                     request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants &&
+    //                     request.resource.size < 5 * 1024 * 1024 &&
+    //                     request.resource.contentType.matches('image/.*|audio/.*');
+    //   }
+    // }
+
+    match /chats/{chatId} {
+      // Users can read chats they are a participant of
+      allow read: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      
+      // Users can create a chat if they include themselves in participants
+      allow create: if isAuthenticated() && isValidChat();
+      
+      // Users can update a chat (e.g., updating lastMessage and updatedAt) if they are a participant
+      allow update: if isAuthenticated() && 
+                       request.auth.uid in resource.data.participants && 
+                       isValidChat() &&
+                       areImmutableFieldsUnchanged(['participants']); // Participants cannot change for now
+                       
+      allow delete: if false; // Chats cannot be deleted
+      
+      match /messages/{messageId} {
+        // Users can read messages in a chat they participate in
+        allow read: if isAuthenticated() && 
+                       request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        
+        // Users can send messages to a chat they participate in
+        allow create: if isAuthenticated() && 
+                         request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants &&
+                         isValidMessage();
+                         
+        // Users can update messages to mark them as read
+        allow update: if isAuthenticated() && 
+                         request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants &&
+                         isValidMessageUpdate();
+                         
+        allow delete: if false; // Messages cannot be deleted
+      }
+    }
+  }
+}

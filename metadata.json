@@ -1,0 +1,5 @@
+{
+  "name": "Messenger App",
+  "description": "A high-performance, secure real-time messaging application with iMessage-style design, media sharing, read receipts, and advanced animations.",
+  "requestFramePermissions": ["microphone", "camera"]
+}
