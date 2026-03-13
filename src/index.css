@@ -6,6 +6,61 @@
 
 body {
   background-color: #ffffff;
+  color: #000000;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dark body {
+  background-color: #000000;
+  color: #ffffff;
+}
+
+.dark .bg-white {
+  background-color: #1c1c1e !important;
+}
+
+.dark .bg-[#f2f2f7] {
+  background-color: #000000 !important;
+}
+
+.dark .text-black {
+  color: #ffffff !important;
+}
+
+.dark .text-gray-500 {
+  color: #8e8e93 !important;
+}
+
+.dark .border-gray-200 {
+  border-color: #38383a !important;
+}
+
+.dark .divide-gray-200 > * + * {
+  border-color: #38383a !important;
+}
+
+.dark .bg-gray-50 {
+  background-color: #1c1c1e !important;
+}
+
+.dark .bg-gray-100 {
+  background-color: #2c2c2e !important;
+}
+
+.dark .bg-gray-200 {
+  background-color: #3a3a3c !important;
+}
+
+.dark .bg-blue-50 {
+  background-color: #0a1a2e !important;
+}
+
+.dark .backdrop-blur-xl {
+  background-color: rgba(0, 0, 0, 0.8) !important;
+}
+
+.dark input {
+  color-scheme: dark;
 }

@@ -12,7 +12,12 @@
         "email": { "type": "string", "description": "User's email address (Private)." },
         "createdAt": { "type": "string", "format": "date-time", "description": "When the account was created." },
         "isOnline": { "type": "boolean", "description": "Whether the user is currently online." },
-        "lastSeen": { "type": "string", "format": "date-time", "description": "When the user was last active." }
+        "lastSeen": { "type": "string", "format": "date-time", "description": "When the user was last active." },
+        "blockedUsers": { "type": "array", "items": { "type": "string" }, "description": "List of UIDs blocked by this user." },
+        "status": { "type": "string", "description": "User's current status message." },
+        "bio": { "type": "string", "description": "User's biography." },
+        "phoneNumber": { "type": "string", "description": "User's phone number." },
+        "theme": { "type": "string", "enum": ["light", "dark"], "description": "User's preferred theme." }
       },
       "required": ["uid", "username", "displayName", "email", "createdAt"]
     },
@@ -26,7 +31,8 @@
         "lastMessage": { "type": "string", "description": "The content of the most recent message." },
         "lastMessageSenderId": { "type": "string", "description": "UID of the sender of the last message." },
         "lastMessageReadBy": { "type": "array", "items": { "type": "string" }, "description": "List of UIDs who have read the last message." },
-        "unreadCount": { "type": "object", "description": "Map of unread counts per user UID." }
+        "unreadCount": { "type": "object", "description": "Map of unread counts per user UID." },
+        "typing": { "type": "object", "description": "Map of typing status per user UID." }
       },
       "required": ["participants", "updatedAt"]
     },
@@ -37,10 +43,18 @@
       "properties": {
         "senderId": { "type": "string", "description": "UID of the message sender." },
         "text": { "type": "string", "description": "Text content of the message." },
-        "type": { "type": "string", "enum": ["text", "image", "audio"], "description": "Type of message content." },
-        "mediaUrl": { "type": "string", "description": "URL to media if type is image or audio." },
+        "type": { "type": "string", "enum": ["text", "audio"], "description": "Type of message content." },
+        "mediaUrl": { "type": "string", "description": "URL to media if type is audio." },
         "createdAt": { "type": "string", "format": "date-time", "description": "When the message was sent." },
-        "readBy": { "type": "array", "items": { "type": "string" }, "description": "List of UIDs who have read this message." }
+        "readBy": { "type": "array", "items": { "type": "string" }, "description": "List of UIDs who have read this message." },
+        "replyTo": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "text": { "type": "string" },
+            "senderId": { "type": "string" }
+          }
+        }
       },
       "required": ["senderId", "text", "createdAt"]
     }

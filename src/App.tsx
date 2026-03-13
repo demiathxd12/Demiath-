@@ -1,16 +1,17 @@
 import { useState, useEffect } from "react";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { Login } from "./components/Login";
 import { SetupProfile } from "./components/SetupProfile";
 import { Messenger } from "./components/Messenger";
 import { UserProfile } from "./types";
 import { Toaster } from "sonner";
+import { useAppStore } from "./store";
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const { currentUserProfile: profile, setCurrentUserProfile: setProfile } = useAppStore();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,25 +19,32 @@ export default function App() {
       setUser(currentUser);
       if (currentUser) {
         const docRef = doc(db, "users", currentUser.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setProfile(docSnap.data() as UserProfile);
-          // Set initial online status
-          await updateDoc(docRef, {
-            isOnline: true,
-            lastSeen: serverTimestamp()
-          });
-        } else {
-          setProfile(null);
-        }
+        
+        // Use onSnapshot for real-time profile updates
+        const unsubProfile = onSnapshot(docRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setProfile(docSnap.data() as UserProfile);
+          } else {
+            setProfile(null);
+          }
+          setLoading(false);
+        });
+
+        // Set initial online status
+        await updateDoc(docRef, {
+          isOnline: true,
+          lastSeen: serverTimestamp()
+        });
+
+        return () => unsubProfile();
       } else {
         setProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [setProfile]);
 
   useEffect(() => {
     if (!user || !profile) return;

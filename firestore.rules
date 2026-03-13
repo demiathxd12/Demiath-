@@ -16,7 +16,11 @@ service cloud.firestore {
     //   - createdAt: timestamp (required, immutable) - account creation time
     //   - isOnline: boolean (optional) - user's online status
     //   - lastSeen: timestamp (optional) - user's last seen time
-    //
+    //   - status: string (optional, max 100 chars) - user's status message
+    //   - bio: string (optional, max 500 chars) - user's bio
+    //   - phoneNumber: string (optional, max 20 chars) - user's phone number
+    //   - theme: string (optional, 'light'|'dark') - user's theme preference
+    //   - blockedUsers: list of strings (optional) - UIDs of blocked users
     // Collection: chats
     // Document ID: {chatId} (auto-generated)
     // Fields:
@@ -84,7 +88,7 @@ service cloud.firestore {
 
     function isValidUser() {
       return hasRequiredFields(['uid', 'username', 'displayName', 'email', 'createdAt']) &&
-             hasOnlyAllowedFields(['uid', 'username', 'displayName', 'photoURL', 'email', 'createdAt', 'isOnline', 'lastSeen']) &&
+             hasOnlyAllowedFields(['uid', 'username', 'displayName', 'photoURL', 'email', 'createdAt', 'isOnline', 'lastSeen', 'blockedUsers', 'status', 'bio', 'phoneNumber', 'theme']) &&
              request.resource.data.uid == request.auth.uid &&
              isValidString('username', 3, 30) &&
              isValidString('displayName', 1, 50) &&
@@ -92,12 +96,17 @@ service cloud.firestore {
              request.resource.data.createdAt is timestamp &&
              (!('photoURL' in request.resource.data) || isValidString('photoURL', 0, 500)) &&
              (!('isOnline' in request.resource.data) || request.resource.data.isOnline is bool) &&
-             (!('lastSeen' in request.resource.data) || request.resource.data.lastSeen is timestamp);
+             (!('lastSeen' in request.resource.data) || request.resource.data.lastSeen is timestamp) &&
+             (!('blockedUsers' in request.resource.data) || request.resource.data.blockedUsers is list) &&
+             (!('status' in request.resource.data) || isValidString('status', 0, 100)) &&
+             (!('bio' in request.resource.data) || isValidString('bio', 0, 500)) &&
+             (!('phoneNumber' in request.resource.data) || isValidString('phoneNumber', 0, 20)) &&
+             (!('theme' in request.resource.data) || request.resource.data.theme in ['light', 'dark']);
     }
 
     function isValidChat() {
       return hasRequiredFields(['participants', 'updatedAt']) &&
-             hasOnlyAllowedFields(['participants', 'updatedAt', 'lastMessage', 'unreadCount', 'lastMessageSenderId', 'lastMessageReadBy']) &&
+             hasOnlyAllowedFields(['participants', 'updatedAt', 'lastMessage', 'unreadCount', 'lastMessageSenderId', 'lastMessageReadBy', 'typing']) &&
              request.resource.data.participants is list &&
              request.resource.data.participants.size() >= 2 &&
              request.resource.data.participants.size() <= 10 &&
@@ -106,24 +115,26 @@ service cloud.firestore {
              (!('lastMessage' in request.resource.data) || isValidString('lastMessage', 0, 1000)) &&
              (!('lastMessageSenderId' in request.resource.data) || isValidString('lastMessageSenderId', 0, 100)) &&
              (!('lastMessageReadBy' in request.resource.data) || request.resource.data.lastMessageReadBy is list) &&
-             (!('unreadCount' in request.resource.data) || request.resource.data.unreadCount is map);
+             (!('unreadCount' in request.resource.data) || (request.resource.data.unreadCount is map && request.resource.data.unreadCount.size() <= 10)) &&
+             (!('typing' in request.resource.data) || (request.resource.data.typing is map && request.resource.data.typing.size() <= 10));
     }
 
     function isValidMessage() {
       return hasRequiredFields(['senderId', 'text', 'createdAt']) &&
-             hasOnlyAllowedFields(['senderId', 'text', 'createdAt', 'type', 'mediaUrl', 'readBy']) &&
+             hasOnlyAllowedFields(['senderId', 'text', 'createdAt', 'type', 'mediaUrl', 'readBy', 'replyTo']) &&
              request.resource.data.senderId == request.auth.uid &&
              isValidString('text', 0, 2000) &&
              request.resource.data.createdAt is timestamp &&
-             (!('type' in request.resource.data) || request.resource.data.type in ['text', 'image', 'audio']) &&
-             (!('mediaUrl' in request.resource.data) || isValidString('mediaUrl', 0, 1000)) &&
-             (!('readBy' in request.resource.data) || request.resource.data.readBy is list);
+             (!('type' in request.resource.data) || request.resource.data.type in ['text', 'audio']) &&
+             (!('mediaUrl' in request.resource.data) || (request.resource.data.type == 'audio' && isValidString('mediaUrl', 0, 1000))) &&
+             (!('readBy' in request.resource.data) || request.resource.data.readBy is list) &&
+             (!('replyTo' in request.resource.data) || (request.resource.data.replyTo is map && request.resource.data.replyTo.keys().hasAll(['id', 'text', 'senderId'])));
     }
 
     function isValidMessageUpdate() {
       // Allow updating readBy array
-      return hasOnlyAllowedFields(['senderId', 'text', 'createdAt', 'type', 'mediaUrl', 'readBy']) &&
-             areImmutableFieldsUnchanged(['senderId', 'text', 'createdAt', 'type', 'mediaUrl']) &&
+      return hasOnlyAllowedFields(['senderId', 'text', 'createdAt', 'type', 'mediaUrl', 'readBy', 'replyTo']) &&
+             areImmutableFieldsUnchanged(['senderId', 'text', 'createdAt', 'type', 'mediaUrl', 'replyTo']) &&
              (!('readBy' in request.resource.data) || request.resource.data.readBy is list);
     }
 
@@ -191,7 +202,9 @@ service cloud.firestore {
                          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants &&
                          isValidMessageUpdate();
                          
-        allow delete: if false; // Messages cannot be deleted
+        // Users can delete their own messages
+        allow delete: if isAuthenticated() && 
+                         resource.data.senderId == request.auth.uid;
       }
     }
   }
